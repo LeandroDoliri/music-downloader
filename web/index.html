@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Downloader</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Descargar Música</h1>
+            <p>Pega un enlace de YouTube o Spotify</p>
+        </div>
+
+        <div class="input-group">
+            <label for="url">Enlace</label>
+            <input type="text" id="url" placeholder="https://..." autocomplete="off">
+        </div>
+
+        <div class="row">
+            <div class="input-group">
+                <label for="format">Formato</label>
+                <select id="format">
+                    <option value="mp3">Audio MP3</option>
+                    <option value="mp4">Video MP4</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label>Carpeta Destino</label>
+                <button type="button" id="btn-folder" class="btn-secondary">Elegir Carpeta</button>
+            </div>
+        </div>
+        
+        <!-- Opciones Avanzadas -->
+        <div class="accordion">
+            <button class="accordion-header" id="btn-advanced" type="button">
+                <span>⚙️ Opciones Avanzadas</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="accordion-content" id="advanced-panel">
+                <div class="adv-grid">
+                    <div class="input-group">
+                        <label for="adv-format">Formato Específico</label>
+                        <select id="adv-format">
+                            <option value="mp3">MP3</option>
+                            <option value="m4a">M4A</option>
+                            <option value="flac">FLAC</option>
+                            <option value="wav">WAV</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="adv-quality">Calidad</label>
+                        <select id="adv-quality">
+                            <option value="320k">320 kbps</option>
+                            <option value="256k">256 kbps</option>
+                            <option value="192k">192 kbps</option>
+                            <option value="128k">128 kbps</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="checkbox-group mt-12">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="chk-playlist">
+                        <span class="checkmark"></span>
+                        Descargar Playlist completa
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="chk-metadata" checked>
+                        <span class="checkmark"></span>
+                        Incrustar Metadatos / Portada
+                    </label>
+                    <label class="checkbox-label" id="lbl-subs" style="display: none;">
+                        <input type="checkbox" id="chk-subs">
+                        <span class="checkmark"></span>
+                        Descargar Subtítulos (YouTube)
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Carpeta seleccionada visible solo cuando se elige una -->
+        <p id="folder-path" style="font-size: 12px; color: var(--text-muted); text-align: center; margin-top: -8px; display: none; word-break: break-all;"></p>
+
+        <button id="btn-download" class="btn-primary">
+            <div class="spinner"></div>
+            <span>Descargar</span>
+        </button>
+
+        <div class="console-container" id="console-container">
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill" id="progress-bar"></div>
+            </div>
+            <div class="console" id="console"></div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
