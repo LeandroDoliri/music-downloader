@@ -98,11 +98,36 @@
                             <span class="checkmark"></span>
                             <span>Incrustar subtítulos <small>(español e inglés)</small></span>
                         </label>
+                        <label class="checkbox-label" id="lbl-skip">
+                            <input type="checkbox" id="chk-skip" checked>
+                            <span class="checkmark"></span>
+                            <span>No volver a bajar lo que ya tengo <small>(aunque esté en otra carpeta o formato)</small></span>
+                        </label>
                         <label class="checkbox-label" id="lbl-sponsor" hidden>
                             <input type="checkbox" id="chk-sponsor">
                             <span class="checkmark"></span>
                             <span>Quitar partes sin música <small>(intros, diálogos · SponsorBlock)</small></span>
                         </label>
+                    </div>
+
+                    <!-- Sesión de YouTube (Premium): se importa una vez desde el navegador -->
+                    <div class="account">
+                        <div class="account-head">
+                            <div class="account-info">
+                                <strong>Cuenta de YouTube</strong>
+                                <span id="account-state">No conectada</span>
+                            </div>
+                            <div class="account-actions">
+                                <select id="account-browser" aria-label="Navegador"></select>
+                                <button type="button" class="btn-small" id="btn-account">Conectar</button>
+                            </div>
+                        </div>
+                        <label class="checkbox-label" id="lbl-account" hidden>
+                            <input type="checkbox" id="chk-account">
+                            <span class="checkmark"></span>
+                            <span>Usar mi cuenta en las descargas <small>(contenido Premium y audio a 256 kbps)</small></span>
+                        </label>
+                        <p class="hint" id="account-help">Cierra el navegador por completo antes de conectar. YouTube puede limitar cuentas que usan descargadores: úsalo con moderación.</p>
                     </div>
                 </div>
             </div>

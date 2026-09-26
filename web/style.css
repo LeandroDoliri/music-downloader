@@ -634,6 +634,90 @@ select:disabled {
 .log-entry { word-break: break-all; }
 .log-entry.error { color: #f87171; }
 .log-entry.warning { color: #fbbf24; }
+
+.log-entry.explain {
+    color: #e5e7eb;
+    background: rgba(251, 191, 36, 0.12);
+    border-left: 2px solid #fbbf24;
+    padding: 2px 8px;
+    margin: 2px 0;
+    word-break: normal;
+}
+
+/* Cuenta de YouTube (opciones avanzadas) */
+.account {
+    margin: 0 14px 14px;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.account-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.account-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    font-size: 13px;
+}
+
+#account-state {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+#account-state.error { color: var(--danger); }
+
+.account-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.account-actions select {
+    width: auto;
+    height: 34px;
+    padding: 0 30px 0 10px;
+    font-size: 13px;
+    background-position: right 10px center;
+}
+
+.btn-small {
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 9px;
+    border: none;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 600;
+    transition: background 0.15s var(--ease);
+}
+
+.btn-small:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.btn-small.danger { background: var(--danger-soft); color: var(--danger); }
+.btn-small:disabled { opacity: 0.6; cursor: wait; }
+
+.status-explain {
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--text-muted);
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--surface);
+    border-left: 3px solid var(--warning);
+    user-select: text;
+    -webkit-user-select: text;
+}
 .log-entry.success { color: #34d399; }
 
 /* Aviso de dependencias */

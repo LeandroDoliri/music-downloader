@@ -21,6 +21,8 @@ const state = {
     env: null,        // resultado de check_environment()
     spotdlTotal: 0,   // canciones de la lista de Spotify ("Found N songs")
     spotdlDone: 0,
+    skipped: 0,       // elementos omitidos porque ya los tenía
+    newFiles: 0,      // elementos descargados de verdad en esta ejecución
 };
 
 // Elementos UI
@@ -42,6 +44,8 @@ const chkSubs = $('chk-subs');
 const lblSubs = $('lbl-subs');
 const chkSponsor = $('chk-sponsor');
 const lblSponsor = $('lbl-sponsor');
+const chkSkip = $('chk-skip');
+const lblSkip = $('lbl-skip');
 const btnAdvanced = $('btn-advanced');
 const advancedPanel = $('advanced-panel');
 const btnDownload = $('btn-download');
@@ -55,6 +59,12 @@ const logDetails = document.querySelector('.log');
 const envBanner = $('env-banner');
 const btnUpdate = $('btn-update');
 const btnCheck = $('btn-check');
+const accountState = $('account-state');
+const accountBrowser = $('account-browser');
+const btnAccount = $('btn-account');
+const chkAccount = $('chk-account');
+const lblAccount = $('lbl-account');
+const accountHelp = $('account-help');
 
 function load(key) {
     return localStorage.getItem(PREFIX + key);
@@ -157,6 +167,8 @@ function updateSourceUI() {
     lblSubs.hidden = !(source === 'youtube' && shownFormat === 'mp4');
     // SponsorBlock solo tiene datos de videos de YouTube (spotDL también baja de YouTube)
     lblSponsor.hidden = !(source === 'youtube' || isSpotify);
+    // spotDL ya omite por su cuenta las canciones que existen en la carpeta destino
+    lblSkip.hidden = isSpotify;
 
     if (advFormatSelect.dataset.mode !== shownFormat) {
         advFormatSelect.dataset.mode = shownFormat;
@@ -183,6 +195,8 @@ function loadPreferences() {
     chkPlaylist.checked = load('playlist') === 'true';
     chkSubs.checked = load('subs') === 'true';
     chkSponsor.checked = load('sponsorblock') === 'true';
+    chkSkip.checked = load('skipExisting') !== 'false'; // por defecto true
+    chkAccount.checked = load('useAccount') !== 'false'; // por defecto true al conectar
     renderFolder();
     updateSourceUI();
 }
@@ -197,6 +211,8 @@ function savePreferences() {
     save('metadata', state.metadata);
     save('subs', chkSubs.checked);
     save('sponsorblock', chkSponsor.checked);
+    save('skipExisting', chkSkip.checked);
+    save('useAccount', chkAccount.checked);
 }
 
 // --- Dependencias y actualizaciones ---
@@ -318,6 +334,64 @@ advQualitySelect.addEventListener('change', () => {
 chkPlaylist.addEventListener('change', savePreferences);
 chkSubs.addEventListener('change', savePreferences);
 chkSponsor.addEventListener('change', savePreferences);
+chkSkip.addEventListener('change', savePreferences);
+chkAccount.addEventListener('change', savePreferences);
+
+// --- Cuenta de YouTube ---
+
+let accountConnected = false;
+
+async function loadAccount() {
+    if (!window.pywebview?.api) return;
+    renderAccount(await window.pywebview.api.account_status());
+}
+
+function renderAccount(status, error = '') {
+    accountConnected = status.connected;
+    accountState.classList.toggle('error', !!error);
+    if (error) {
+        accountState.textContent = error;
+    } else if (status.connected) {
+        accountState.textContent = `Conectada desde ${status.browser ?? 'el navegador'}${status.date ? ` (${status.date})` : ''}`;
+    } else {
+        accountState.textContent = status.browsers.length ? 'No conectada' : 'No se encontró ningún navegador compatible';
+    }
+
+    if (!status.connected) {
+        const previous = accountBrowser.value || load('accountBrowser');
+        fillSelect(accountBrowser, status.browsers);
+        restoreSelect(accountBrowser, previous);
+    }
+    accountBrowser.hidden = status.connected || !status.browsers.length;
+    btnAccount.hidden = !status.connected && !status.browsers.length;
+    btnAccount.textContent = status.connected ? 'Desconectar' : 'Conectar';
+    btnAccount.classList.toggle('danger', status.connected);
+    lblAccount.hidden = !status.connected;
+    accountHelp.hidden = status.connected && !error;
+}
+
+btnAccount.addEventListener('click', async () => {
+    const api = window.pywebview?.api;
+    if (!api || state.downloading) return;
+    btnAccount.disabled = true;
+    try {
+        if (accountConnected) {
+            await api.disconnect_account();
+            renderAccount(await api.account_status());
+        } else {
+            save('accountBrowser', accountBrowser.value);
+            btnAccount.textContent = 'Conectando…';
+            const result = await api.connect_account(accountBrowser.value);
+            if (result.ok) {
+                chkAccount.checked = true;
+                savePreferences();
+            }
+            renderAccount(await api.account_status(), result.ok ? '' : result.error);
+        }
+    } finally {
+        btnAccount.disabled = false;
+    }
+});
 chkMetadata.addEventListener('change', () => {
     if (!chkMetadata.disabled) state.metadata = chkMetadata.checked;
     savePreferences();
@@ -366,6 +440,8 @@ btnDownload.addEventListener('click', () => {
         metadata: chkMetadata.checked,
         subs: !lblSubs.hidden && chkSubs.checked,
         sponsorblock: !lblSponsor.hidden && chkSponsor.checked,
+        skipExisting: !lblSkip.hidden && chkSkip.checked,
+        useAccount: accountConnected && chkAccount.checked,
     };
 
     setDownloading(true);
@@ -386,7 +462,8 @@ function setDownloading(active, initialStatus = "Preparando…") {
     btnCancel.hidden = !active;
     btnCancel.disabled = false;
     btnCancel.querySelector('span').textContent = "Cancelar";
-    [urlInput, btnFolder, advFormatSelect, chkPlaylist, chkSubs, chkSponsor, btnUpdate, btnCheck].forEach(el => el.disabled = active);
+    [urlInput, btnFolder, advFormatSelect, chkPlaylist, chkSubs, chkSponsor, chkSkip, btnUpdate, btnCheck,
+        chkAccount, btnAccount, accountBrowser].forEach(el => el.disabled = active);
     advQualitySelect.disabled = active || LOSSLESS.includes(advFormatSelect.value);
     chkMetadata.disabled = active || getSource(urlInput.value) === 'spotify';
     formatButtons.forEach(btn => btn.disabled = active);
@@ -394,9 +471,13 @@ function setDownloading(active, initialStatus = "Preparando…") {
     if (active) {
         state.spotdlTotal = 0;
         state.spotdlDone = 0;
+        state.skipped = 0;
+        state.newFiles = 0;
         statusBox.hidden = false;
         statusBox.className = 'status';
         consoleDiv.innerHTML = '';
+        const explain = document.getElementById('status-explain');
+        if (explain) explain.hidden = true;
         setStatus(initialStatus);
         setProgress(null);
     } else {
@@ -422,7 +503,17 @@ function updateStatusFromLog(message) {
     if ((m = message.match(/Downloading (?:item|video) (\d+) of (\d+)/i))) {
         setStatus(`Descargando elemento ${m[1]} de ${m[2]}…`);
     } else if ((m = message.match(/\[download\] Destination: (.+)$/))) {
+        state.newFiles++;
         setStatus(`Descargando: ${m[1].split(/[\\/]/).pop()}`);
+    } else if ((m = message.match(/^Ya lo tienes: (.+?)(?: → .*)?$/))) {
+        // main.py lo escribe cuando omite algo que está en el historial
+        state.skipped++;
+        setStatus(`Ya lo tenías: ${m[1]}`);
+    } else if (/^Reintentando /.test(message)) {
+        // Lo que explicaba el fallo del primer intento ya no aplica
+        const explain = document.getElementById('status-explain');
+        if (explain) explain.hidden = true;
+        setStatus(message);
     } else if (/^\[(ExtractAudio|FFmpegExtractAudio)\]/.test(message)) {
         setStatus("Convirtiendo audio…");
     } else if (/^\[Merger\]/.test(message)) {
@@ -437,7 +528,9 @@ function updateStatusFromLog(message) {
     } else if ((m = message.match(/^(?:Downloaded|Skipping) "(.+?)"/))) {
         // spotDL no informa porcentajes: el progreso es canciones hechas / total
         state.spotdlDone++;
-        const prefix = message.startsWith('Skipping') ? 'Ya existía' : 'Descargado';
+        const skipped = message.startsWith('Skipping');
+        if (skipped) state.skipped++; else state.newFiles++;
+        const prefix = skipped ? 'Ya existía' : 'Descargado';
         if (state.spotdlTotal > 1) {
             setStatus(`${prefix} (${state.spotdlDone}/${state.spotdlTotal}): ${m[1]}`);
             setProgress(Math.min(100, state.spotdlDone / state.spotdlTotal * 100));
@@ -453,12 +546,37 @@ function updateStatusFromLog(message) {
     }
 }
 
+// Muestra bajo la barra de estado la causa probable del error, fuera del registro técnico
+function showExplanation(text) {
+    let box = document.getElementById('status-explain');
+    if (!box) {
+        box = document.createElement('p');
+        box.id = 'status-explain';
+        box.className = 'status-explain';
+        progressBar.parentElement.after(box);
+    }
+    // En playlists puede haber varias causas distintas: se listan todas
+    if (!box.hidden && box.textContent && !box.textContent.includes(text)) {
+        box.textContent += ' ' + text;
+    } else {
+        box.textContent = text;
+    }
+    box.hidden = false;
+}
+
 // Llamado desde Python
 function appendLog(message, isError = false, isSuccess = false) {
     const entry = document.createElement('div');
     entry.className = 'log-entry';
     if (isError || /^(error\b|\w+Error\b)/i.test(message)) entry.classList.add('error');
     else if (/^(warning|advertencia)\b/i.test(message)) entry.classList.add('warning');
+    // Explicaciones en español que main.py agrega tras errores conocidos (KNOWN_ERRORS)
+    // Explicaciones de errores (KNOWN_ERRORS) y avisos de main.py: se destacan bajo la barra
+    const notice = message.match(/^(?:Explicación|Aviso): (.+)$/);
+    if (notice) {
+        entry.classList.add('explain');
+        showExplanation(notice[1]);
+    }
     if (isSuccess) entry.classList.add('success');
     entry.textContent = message;
 
@@ -480,7 +598,13 @@ function onDownloadComplete(status) {
     setDownloading(false);
 
     if (status === 'success') {
-        finishStatus(status, "¡Descarga completada!");
+        if (state.skipped && !state.newFiles) {
+            finishStatus(status, state.skipped === 1 ? "Ya lo tenías: no se descargó nada" : "Ya tenías todo: no se descargó nada nuevo");
+        } else if (state.skipped) {
+            finishStatus(status, `¡Listo! Se omitieron ${state.skipped} que ya tenías`);
+        } else {
+            finishStatus(status, "¡Descarga completada!");
+        }
         appendLog("¡Descarga completada con éxito!", false, true);
     } else if (status === 'partial') {
         finishStatus(status, "Completado, pero algunos elementos fallaron");
@@ -501,5 +625,9 @@ function onDownloadComplete(status) {
 // Iniciar app
 loadPreferences();
 // La API de Python se inyecta de forma asíncrona
-if (window.pywebview?.api) checkEnvironment();
-else window.addEventListener('pywebviewready', checkEnvironment);
+function onApiReady() {
+    checkEnvironment();
+    loadAccount();
+}
+if (window.pywebview?.api) onApiReady();
+else window.addEventListener('pywebviewready', onApiReady);
