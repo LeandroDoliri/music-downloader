@@ -1,1 +1,3 @@
 pywebview>=4.4.1
+yt-dlp[default]>=2026.8.19
+spotdl>=4.2.0

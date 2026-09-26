@@ -1,0 +1,53 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Overview
+
+Desktop app (Windows-focused) for downloading audio/video from YouTube and Spotify. A pywebview window hosts a plain HTML/CSS/JS frontend (`web/`); the Python backend (`main.py`) builds command lines and runs `yt-dlp` and `spotdl` as subprocesses. User-facing strings and code comments are in Spanish — keep new UI text in Spanish.
+
+## Commands
+
+```bash
+pip install -r requirements.txt   # pywebview, yt-dlp, spotdl
+python main.py                    # run with a console (see Python errors)
+pythonw main.py                   # run without a console (how end users launch it; "Music Downloader.lnk")
+```
+
+External programs: `ffmpeg` must be on PATH (conversion/merging), and `deno` should be (yt-dlp needs a JS runtime to see all YouTube formats). There are no tests, linter, or build step. The frontend has no bundler — edit `web/*` and relaunch.
+
+The command builders are pure functions, so CLI changes can be checked without the GUI: `python -c "import main; print(main.build_ytdlp_command({...}))"`, or drive `main.Api()` with a fake window object that records `evaluate_js` calls and verify outputs with `ffprobe`.
+
+To iterate on the UI without pywebview, `.claude/launch.json` defines a `web-ui` config that serves `web/` on `http://localhost:8765`. `window.pywebview` doesn't exist there, so stub `window.pywebview.api` (including `check_environment`), dispatch `pywebviewready`, and call `appendLog` / `onDownloadComplete` by hand to exercise the states. The UI follows the OS light/dark theme via `prefers-color-scheme`; check both.
+
+## Architecture
+
+**JS → Python:** `main.py`'s `Api` instance is passed as `js_api`, so its public methods are callable from JS as `window.pywebview.api.<method>()` (returns a Promise). Exposed methods: `choose_directory()`, `download(tool, options)` (returns `False` if busy), `cancel()`, `check_environment()` and `update_tools()`. Methods prefixed with `_` are not exposed.
+
+**Python → JS:** the backend pushes updates via `window.evaluate_js(...)`, calling two global functions defined in `web/app.js`: `appendLog(message)` and `onDownloadComplete(status)`, where `status` is `'success' | 'partial' | 'error' | 'cancelled'`. Renaming either JS function requires updating `_log` / `_finish_download` in `main.py`.
+
+**Tools run as modules of the app's own Python** (`PYTHON -m yt_dlp`, `PYTHON -m spotdl`, preferring `python.exe` over `pythonw.exe`), not whatever is on PATH. That way the version `check_environment()` reports and `update_tools()` upgrades is exactly the one used.
+
+**Download flow:**
+1. The frontend picks the tool by URL (`spotify` → `'spotdl'`, otherwise `'yt-dlp'`) and sends `options`: `url, folder, mainFormat` (`mp3` = audio, `mp4` = video), `advFormat`, `quality`, `playlist, metadata, subs, sponsorblock`. Options whose checkbox is hidden for the current source are sent as `false`.
+2. `_run_download` validates, builds the command with `build_ytdlp_command` / `build_spotdl_command`, and `_stream` runs it, forwarding stdout to `_log` (progress lines throttled to ~10/s) and counting error/success lines.
+3. The final status comes from the exit code plus those counts: yt-dlp runs with `--ignore-errors`, so a playlist with some failed items ends as `'partial'`.
+4. `updateStatusFromLog` in `app.js` maps known yt-dlp/spotdl lines to a readable status. yt-dlp gives `[download] NN%`. spotdl never prints percentages, so progress is computed from `Found N songs` and the count of `Downloaded`/`Skipping` lines.
+
+**Cancellation / shutdown:** the running `Popen` is stored in `self._process` under `self._lock`; `_busy` guards both downloads and updates. `cancel()` kills the process tree (`taskkill /T` on Windows, so ffmpeg children die too). After `webview.start()` returns, `api.shutdown()` clears the window reference and cancels any running download. Don't call `evaluate_js` while holding `_lock`.
+
+**Updates:** `check_environment()` compares installed versions (`importlib.metadata`) with PyPI's latest and reports whether ffmpeg and deno are present. `update_tools()` runs `pip install --upgrade "yt-dlp[default]" spotdl` in a single command, because spotdl pins `yt-dlp<NEXT_YEAR`. Upgrading yt-dlp alone could break spotdl. When the latest yt-dlp exceeds that pin, it's reported as `blocked`, not outdated. `yt-dlp[default]` matters: it pulls `yt-dlp-ejs` (YouTube JS challenges) and `mutagen` (cover embedding).
+
+**yt-dlp decisions (verified with real downloads + ffprobe — keep them unless re-verified):**
+- Video uses `-S` sorting, not `[ext=...]` filters. MP4 prefers `vcodec:h264` because plain "best mp4" picks AV1, which many players can't open. H.264 caps at 1080p on YouTube, so the UI hides 1440p/4K for MP4. MKV/WEBM are the max-quality options.
+- Audio M4A/OPUS select the matching source codec (`ba[acodec^=mp4a]`, `ba[acodec=opus]`) and skip `--audio-quality` when quality is "best", so the audio is copied rather than re-encoded. MP3 "best" must pass `--audio-quality 0`, because yt-dlp's default of 5 means ~128 kbps.
+- `--embed-thumbnail` fails the whole download for WAV (and isn't supported for WEBM). See `THUMBNAIL_AUDIO` / `THUMBNAIL_VIDEO`. Audio covers are cropped square via `--ppa ThumbnailsConvertor+FFmpeg_o:...`.
+- Subtitles: `--sub-langs all` or `en.*` pull dozens of machine translations (`en-de`, …), leave loose `.vtt` files and trigger HTTP 429. `SUB_LANGS` is an anchored es/en list. `--write-auto-subs` is included because most videos only have auto captions.
+- `--no-playlist` only matters for `watch?v=…&list=…` URLs; pure playlist URLs always download fully. `OUTPUT_TEMPLATE` puts playlists in a subfolder with numbered files.
+- `ARTIST_FROM_TITLE` parses "Artist - Title" only when the video has no artist field (the `§` sentinel trick), so YouTube Music metadata isn't overwritten.
+
+**spotdl notes:** audio only, and it always embeds metadata and downloads whole lists. The UI hides or locks those options for Spotify links, while `state.format` / `state.metadata` keep the user's own choice for other links. `--bitrate disable` skips conversion for m4a/opus and is used for lossless formats. It needs `COLUMNS=200` in the env, or rich wraps its output at 80 columns. It runs with `cwd=folder` because it saves to the working directory. `--dont-filter-results` was removed on purpose, since the filters prevent wrong-song matches.
+
+**Frontend options:** `FORMAT_OPTIONS`, `AUDIO_QUALITY`, `VIDEO_QUALITY` and `MP4_MAX` in `app.js` must match what `main.py` handles. `updateHints()` explains non-obvious trade-offs, for example that FLAC/WAV can't improve lossy YouTube audio.
+
+**Persistence:** user preferences are stored in the webview's `localStorage` under `music_downloader_*` keys — there is no backend config file. Advanced format/quality are saved per mode (`advFormat_mp3`, `advFormat_mp4`, …), so the main format must be restored and the selects regenerated before applying them.
