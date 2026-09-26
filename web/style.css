@@ -128,8 +128,10 @@ button { cursor: pointer; }
     border-radius: 12px;
     display: grid;
     place-items: center;
-    background: var(--accent);
-    color: var(--on-accent);
+    /* mismos colores que icon.ico, fijos en ambos temas */
+    background: linear-gradient(180deg, #6366f1, #4338ca);
+    color: #fff;
+    box-shadow: 0 4px 12px -4px rgba(67, 56, 202, 0.5);
 }
 
 .header h1 {

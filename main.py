@@ -361,6 +361,15 @@ class Api:
 
 
 if __name__ == '__main__':
+    if os.name == 'nt':
+        # Identidad propia en la barra de tareas: sin esto Windows agrupa la ventana
+        # con pythonw.exe y puede mostrar el ícono de Python en lugar de icon.ico
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('LeanDoliri.MusicDownloader')
+        except Exception:
+            pass
+
     api = Api()
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
