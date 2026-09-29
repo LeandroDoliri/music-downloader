@@ -31,6 +31,9 @@
             </button>
         </div>
 
+        <!-- En ventanas anchas: descarga a la izquierda, opciones a la derecha (ver .layout en style.css) -->
+        <div class="layout">
+        <section class="col-main">
         <div class="field">
             <label for="url">Enlace</label>
             <div class="url-wrap">
@@ -63,7 +66,39 @@
             </button>
         </div>
 
-        <!-- Opciones Avanzadas -->
+        <div class="actions">
+            <button id="btn-download" class="btn-primary" type="button">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12M6 10l6 6 6-6M5 20h14"/></svg>
+                <span>Descargar</span>
+            </button>
+            <button id="btn-cancel" class="btn-danger" type="button" hidden>
+                <div class="spinner"></div>
+                <span>Cancelar</span>
+            </button>
+        </div>
+
+        <section class="status" id="status" hidden>
+            <div class="status-row">
+                <span class="status-text" id="status-text">Preparando…</span>
+                <span class="status-percent" id="status-percent"></span>
+            </div>
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill" id="progress-bar"></div>
+            </div>
+            <details class="log">
+                <summary>Ver registro</summary>
+                <div class="console" id="console"></div>
+            </details>
+        </section>
+        <!-- Solo en ventanas anchas, hasta la primera descarga (lo oculta el CSS cuando #status se muestra) -->
+        <div class="status-idle" aria-hidden="true">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12M6 10l6 6 6-6M5 20h14"/></svg>
+            <span>El progreso de la descarga aparecerá aquí</span>
+        </div>
+        </section>
+
+        <!-- Opciones Avanzadas (acordeón en ventanas estrechas, panel fijo en anchas) -->
+        <aside class="col-options">
         <div class="accordion">
             <button class="accordion-header" id="btn-advanced" type="button" aria-expanded="false" aria-controls="advanced-panel">
                 <span>Opciones avanzadas</span>
@@ -132,31 +167,8 @@
                 </div>
             </div>
         </div>
-
-        <div class="actions">
-            <button id="btn-download" class="btn-primary" type="button">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12M6 10l6 6 6-6M5 20h14"/></svg>
-                <span>Descargar</span>
-            </button>
-            <button id="btn-cancel" class="btn-danger" type="button" hidden>
-                <div class="spinner"></div>
-                <span>Cancelar</span>
-            </button>
+        </aside>
         </div>
-
-        <section class="status" id="status" hidden>
-            <div class="status-row">
-                <span class="status-text" id="status-text">Preparando…</span>
-                <span class="status-percent" id="status-percent"></span>
-            </div>
-            <div class="progress-bar-bg">
-                <div class="progress-bar-fill" id="progress-bar"></div>
-            </div>
-            <details class="log">
-                <summary>Ver registro</summary>
-                <div class="console" id="console"></div>
-            </details>
-        </section>
 
         <footer class="footer">
             <span id="versions">Comprobando versiones…</span>

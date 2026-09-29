@@ -13,6 +13,12 @@ from importlib.util import find_spec
 
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
 
+# La versión instalada trae ffmpeg y deno en bin\ (ver tools/build_installer.ps1). Se anteponen
+# al PATH para que shutil.which y los subprocesos (yt-dlp, spotDL) usen esos antes que los del sistema.
+_BUNDLED_BIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bin')
+if os.path.isdir(_BUNDLED_BIN):
+    os.environ['PATH'] = _BUNDLED_BIN + os.pathsep + os.environ.get('PATH', '')
+
 # Las herramientas se ejecutan como módulos del mismo Python que corre la app, así la
 # versión que se chequea/actualiza es exactamente la que se usa. Con pythonw se prefiere
 # python.exe (misma instalación) para que pip y los módulos escriban bien en stdout.
@@ -590,9 +596,10 @@ if __name__ == '__main__':
         'Music Downloader',
         url=f'file://{index_path}',
         js_api=api,
-        width=540,
-        height=800,
-        min_size=(420, 560),
+        # Apaisada: a partir de 860 px de ancho la UI usa dos columnas (ver style.css)
+        width=1000,
+        height=760,
+        min_size=(440, 560),
         background_color='#eef0f4'
     )
 

@@ -799,3 +799,87 @@ select:disabled {
 
 .link-btn:hover:not(:disabled) { color: var(--accent); }
 .link-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* Columnas: en ventanas estrechas desaparecen (display: contents) y todo se apila como
+   antes, con las opciones entre la carpeta y el botón de descargar */
+.layout {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0;
+}
+
+.col-main,
+.col-options { display: contents; }
+
+.actions,
+.status { order: 1; }
+
+.status-idle { display: none; }
+
+/* Escritorio: descarga a la izquierda, opciones siempre visibles a la derecha */
+@media (min-width: 860px) {
+    body {
+        padding: 24px;
+        align-items: center;
+    }
+
+    .container {
+        max-width: 1040px;
+        padding: 28px 32px;
+        gap: 24px;
+    }
+
+    .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+        gap: 28px;
+        align-items: stretch;
+    }
+
+    .col-main,
+    .col-options {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        min-width: 0;
+    }
+
+    .actions,
+    .status { order: 0; }
+
+    /* Estado vacío / estado de la descarga ocupan el resto de la columna */
+    .status,
+    .status-idle { flex: 1; }
+
+    .status-idle {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        min-height: 140px;
+        border-radius: var(--radius);
+        border: 1px dashed var(--border);
+        color: var(--text-faint);
+        font-size: 13px;
+    }
+
+    .status:not([hidden]) ~ .status-idle { display: none; }
+
+    .status .log { display: flex; flex-direction: column; flex: 1; }
+    /* height 0 + flex 1: la consola llena el hueco libre sin agrandar la columna */
+    .status .log[open] .console { flex: 1; height: 0; min-height: 90px; }
+
+    /* El acordeón pasa a ser un panel fijo: sin chevron ni animación */
+    .col-options .accordion { height: 100%; }
+
+    .col-options .accordion-header {
+        pointer-events: none;
+        cursor: default;
+    }
+
+    .col-options .accordion-header svg { display: none; }
+
+    .col-options .accordion-content { grid-template-rows: 1fr; transition: none; }
+}
