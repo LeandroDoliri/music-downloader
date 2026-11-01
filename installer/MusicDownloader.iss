@@ -14,7 +14,7 @@ AppId={{6C1D2B7E-3F4A-4E8B-9A51-2D7C0F3B8E41}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher=Leandro Doliri
-AppPublisherURL=https://github.com/LeanDoliri/music-downloader
+AppPublisherURL=https://github.com/LeandroDoliri/music-downloader
 ; Carpeta del usuario, sin permisos de administrador: así pip puede actualizar
 ; yt-dlp/spotDL dentro de la instalación desde el botón de la app
 PrivilegesRequired=lowest
