@@ -8,6 +8,22 @@
 </head>
 <body>
     <main class="container">
+        <!-- Versión nueva de la app en GitHub (check_app_update en main.py) -->
+        <div class="banner info app-update" id="app-banner" hidden>
+            <div class="banner-text">
+                <strong id="app-update-title"></strong>
+                <span id="app-update-detail"></span>
+            </div>
+            <div class="banner-actions">
+                <button type="button" class="link-btn" id="btn-app-notes" aria-expanded="false" aria-controls="app-notes">Novedades</button>
+                <button type="button" class="banner-btn" id="btn-app-update">
+                    <div class="spinner" hidden></div>
+                    <span>Actualizar</span>
+                </button>
+            </div>
+            <div class="app-notes" id="app-notes" hidden></div>
+        </div>
+
         <header class="header">
             <div class="logo" aria-hidden="true">
                 <!-- Mismo glifo que icon.ico (tools/make_icon.py): nota musical + flecha de descarga -->

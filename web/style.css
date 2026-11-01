@@ -774,6 +774,33 @@ select:disabled {
 .banner-btn:active { transform: scale(0.97); }
 .banner-btn:disabled { opacity: 0.7; cursor: wait; }
 
+/* Aviso de versión nueva: las novedades se despliegan debajo, a todo el ancho */
+.app-update { flex-wrap: wrap; }
+
+.banner-actions {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.banner-actions .link-btn { font-size: 12.5px; }
+
+.app-notes {
+    flex-basis: 100%;
+    max-height: 180px;
+    overflow-y: auto;
+    padding-top: 10px;
+    border-top: 1px solid color-mix(in srgb, var(--tone) 20%, transparent);
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text-muted);
+    white-space: pre-wrap;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
 /* Pie con versiones */
 .footer {
     display: flex;

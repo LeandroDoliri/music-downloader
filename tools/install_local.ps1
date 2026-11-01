@@ -6,11 +6,11 @@ bloquea los .exe sin firma digital, incluido el Setup, pero no Python (firmado) 
 Instala lo mismo que el Setup, en la misma carpeta, y lo registra en "Agregar o quitar programas".
 
 Uso (desde la raíz del repo, después de tools\build_installer.ps1):
-    powershell -ExecutionPolicy Bypass -File tools\install_local.ps1 [-Version 1.0.0] [-NoDesktop]
+    powershell -ExecutionPolicy Bypass -File tools\install_local.ps1 [-NoDesktop]
     powershell -ExecutionPolicy Bypass -File tools\install_local.ps1 -Uninstall
 #>
 param(
-    [string]$Version = '1.0.0',
+    [string]$Version,   # por defecto, el VERSION de build\stage
     [switch]$NoDesktop,
     [switch]$Uninstall
 )
