@@ -86,7 +86,10 @@ COOKIE_EXACT_DOMAINS = ('google.com', 'accounts.google.com')
 HISTORY_FILE = os.path.join(APP_DATA, 'history.tsv')
 # Lista de omitidos que se regenera antes de cada descarga, solo con archivos que siguen existiendo
 SKIP_ARCHIVE = os.path.join(APP_DATA, 'skip_archive.txt')
-ARCHIVED_LINE = re.compile(r'^\[download\] (\S+): has already been recorded in the archive')
+# yt-dlp reciente agrega el título después del id ("<id>: <título> has already…")
+ARCHIVED_LINE = re.compile(r'^\[download\] (\S+): (?:.* )?has already been recorded in the archive')
+# Omitido por yt-dlp porque el archivo ya existe en la carpeta (aunque no esté en el historial)
+EXISTING_LINE = re.compile(r'^\[download\] (.+) has already been downloaded$')
 # Con --print-errors spotDL repite al final cada canción que falló, con su URL de Spotify
 SPOTDL_NOT_FOUND = re.compile(r'^(https://open\.spotify\.com/track/\S+) - LookupError')
 # Marca en el nombre de archivo de las canciones bajadas sin filtro (pueden ser otra versión)
@@ -541,6 +544,12 @@ class Api:
                 self._log(f"Ya lo tienes: {title}" + (f" → {path}" if path else ''))
                 if stats is not None:
                     stats['successes'] += 1
+                continue
+            if (m := EXISTING_LINE.match(line)):
+                # Mismo formato que el caso del historial (SUCCESS_LINE ya lo contó como éxito).
+                # yt-dlp igual lo anota en el historial, así que la próxima vez se detecta desde cualquier carpeta.
+                path = m.group(1)
+                self._log(f"Ya lo tienes: {os.path.splitext(os.path.basename(path))[0]} → {path}")
                 continue
             if '%' in line and not ERROR_LINE.match(line) and not line.startswith('[download] 100%'):
                 now = time.time()
