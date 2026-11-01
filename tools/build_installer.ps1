@@ -8,17 +8,23 @@ Arma build\stage con todo lo que se instala:
     python\    Python "embeddable" oficial + pip + requirements.txt (pip sigue funcionando
                para que el botón de actualizar de la app pueda subir yt-dlp/spotDL)
     bin\       ffmpeg.exe, ffprobe.exe y deno.exe (main.py los antepone al PATH)
-    main.py, web\, icon.ico
+    main.py, web\, icon.ico, VERSION, RUNTIME, requirements.txt
 y lo empaqueta con Inno Setup (installer\MusicDownloader.iss). Los accesos directos abren
 python\pythonw.exe main.py: no hay lanzador .exe propio porque, sin firma digital, el Control
 inteligente de aplicaciones de Windows 11 lo bloquea. Por la misma razón, en una PC con ese
 control activado el Setup tampoco arranca: ahí se usa tools\install_local.ps1.
 
+El .zip es el paquete que la app baja del release de GitHub para actualizarse sola (ver
+apply_app_update en main.py): solo los archivos de la app, más un manifest.json con la versión,
+el sha256 de cada archivo y min_runtime (el valor de RUNTIME). RUNTIME se sube a mano cuando
+cambian Python, ffmpeg o deno de forma que la app nueva los necesite: las instalaciones con un
+RUNTIME menor no se actualizan desde el .zip y la app les pide el instalador completo.
+
 Necesita Inno Setup 6 (winget install JRSoftware.InnoSetup). Las descargas se guardan en
 build\downloads y se reutilizan; -Clean las borra para bajar versiones nuevas.
 #>
 param(
-    [string]$Version = '1.0.0',
+    [string]$Version,   # por defecto, el contenido de VERSION
     [string]$PythonVersion = '3.14.6',
     [switch]$Clean,
     [switch]$NoSetup   # solo armar build\stage (para tools\install_local.ps1), sin Inno Setup
@@ -30,6 +36,7 @@ $root = Split-Path $PSScriptRoot -Parent
 $build = Join-Path $root 'build'
 $downloads = Join-Path $build 'downloads'
 $stage = Join-Path $build 'stage'
+if (-not $Version) { $Version = (Get-Content "$root\VERSION" -Raw).Trim() }
 
 if ($Clean -and (Test-Path $build)) { Remove-Item $build -Recurse -Force }
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
@@ -98,8 +105,38 @@ Expand-Archive $denoZip "$stage\bin" -Force
 
 # --- La app ---
 Write-Host '== App'
-Copy-Item "$root\main.py", "$root\icon.ico" $stage
+Copy-Item "$root\main.py", "$root\icon.ico", "$root\VERSION", "$root\RUNTIME", "$root\requirements.txt" $stage
 Copy-Item "$root\web" "$stage\web" -Recurse
+
+# --- Paquete de actualización (se sube al release junto con el Setup) ---
+# Se arma con System.IO.Compression y no con Compress-Archive: el de PowerShell 5.1 guarda las
+# rutas con "\" y el manifest las nombra con "/". RUNTIME no va: describe la instalación, no la app.
+Write-Host '== Paquete de actualización'
+New-Item -ItemType Directory -Force "$root\dist" | Out-Null
+$files = @('main.py', 'icon.ico', 'VERSION', 'requirements.txt') +
+    (Get-ChildItem "$stage\web" -Recurse -File | ForEach-Object { 'web/' + $_.FullName.Substring("$stage\web\".Length).Replace('\', '/') })
+$hashes = [ordered]@{}
+foreach ($f in $files) { $hashes[$f] = (Get-FileHash (Join-Path $stage $f) -Algorithm SHA256).Hash.ToLower() }
+$manifest = [ordered]@{
+    version     = $Version
+    min_runtime = [int](Get-Content "$root\RUNTIME" -Raw).Trim()
+    files       = $hashes
+} | ConvertTo-Json -Depth 3
+$updateZip = "$root\dist\MusicDownloader-update-$Version.zip"
+if (Test-Path $updateZip) { Remove-Item $updateZip -Force }
+Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+$zip = [System.IO.Compression.ZipFile]::Open($updateZip, 'Create')
+try {
+    foreach ($f in $files) {
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, (Join-Path $stage $f), $f) | Out-Null
+    }
+    $writer = New-Object System.IO.StreamWriter($zip.CreateEntry('manifest.json').Open(), (New-Object System.Text.UTF8Encoding $false))
+    $writer.Write($manifest)
+    $writer.Dispose()
+} finally {
+    $zip.Dispose()
+}
+Write-Host "Listo: $updateZip"
 
 # Precompilar ahorra tiempo en el primer arranque
 & $py -m compileall -q "$stage\python\Lib\site-packages" "$stage\main.py" | Out-Null

@@ -19,6 +19,7 @@ const state = {
     metadata: true,
     downloading: false,
     env: null,        // resultado de check_environment()
+    app: null,        // resultado de check_app_update()
     spotdlTotal: 0,   // canciones de la lista de Spotify ("Found N songs")
     spotdlDone: 0,
     skipped: 0,       // elementos omitidos porque ya los tenía
@@ -65,6 +66,10 @@ const btnAccount = $('btn-account');
 const chkAccount = $('chk-account');
 const lblAccount = $('lbl-account');
 const accountHelp = $('account-help');
+const appBanner = $('app-banner');
+const btnAppUpdate = $('btn-app-update');
+const btnAppNotes = $('btn-app-notes');
+const appNotes = $('app-notes');
 
 function load(key) {
     return localStorage.getItem(PREFIX + key);
@@ -235,9 +240,7 @@ async function checkEnvironment() {
 function renderEnvironment() {
     const env = state.env;
     const names = { 'yt-dlp': 'yt-dlp', 'spotdl': 'spotDL' };
-    $('versions').textContent = env.packages
-        .map(p => `${names[p.name]} ${p.installed ?? 'no instalado'}`)
-        .join(' · ');
+    renderVersions();
 
     const missing = env.packages.filter(p => !p.installed);
     const outdated = env.packages.filter(p => p.outdated);
@@ -275,6 +278,13 @@ function renderEnvironment() {
     btnUpdate.querySelector('span').textContent = missing.length ? 'Instalar' : 'Actualizar';
 }
 
+function renderVersions() {
+    const names = { 'yt-dlp': 'yt-dlp', 'spotdl': 'spotDL' };
+    const parts = state.app ? [`Music Downloader ${state.app.current}`] : [];
+    if (state.env) parts.push(...state.env.packages.map(p => `${names[p.name]} ${p.installed ?? 'no instalado'}`));
+    if (parts.length) $('versions').textContent = parts.join(' · ');
+}
+
 function hasPendingUpdates() {
     return state.env?.packages.some(p => p.outdated || !p.installed);
 }
@@ -300,7 +310,84 @@ btnUpdate.addEventListener('click', async () => {
     await checkEnvironment();
 });
 
-btnCheck.addEventListener('click', checkEnvironment);
+btnCheck.addEventListener('click', () => {
+    checkEnvironment();
+    checkAppUpdate();
+});
+
+// --- Actualización de la app (releases de GitHub) ---
+
+async function checkAppUpdate() {
+    if (!window.pywebview?.api) return;
+    try {
+        state.app = await window.pywebview.api.check_app_update();
+    } catch (err) {
+        console.error(err);
+        return;
+    }
+    renderVersions();
+    renderAppUpdate();
+}
+
+// Las notas del release vienen en Markdown: se muestran como texto, sin la sintaxis
+function plainNotes(markdown) {
+    return markdown
+        .replace(/\*\*|__|`/g, '')
+        .replace(/^#+\s*/gm, '')
+        .replace(/^>\s?/gm, '')
+        .replace(/^[-*]\s+/gm, '• ')
+        .trim();
+}
+
+function renderAppUpdate() {
+    const info = state.app;
+    appBanner.hidden = !info?.available;
+    if (!info?.available) return;
+    $('app-update-title').textContent = `Music Downloader ${info.latest} disponible`;
+    $('app-update-detail').textContent = {
+        git: `Tienes la ${info.current} desde el código del repositorio: actualiza con git pull.`,
+        installer: `Tienes la ${info.current}. Esta versión se instala con el instalador completo.`,
+    }[info.reason] ?? `Tienes la ${info.current}. La actualización tarda unos segundos y la app se reinicia sola.`;
+    btnAppUpdate.hidden = info.reason === 'git';
+    btnAppUpdate.querySelector('span').textContent = info.reason === 'installer' ? 'Descargar' : 'Actualizar';
+    appNotes.textContent = plainNotes(info.notes);
+    btnAppNotes.hidden = !appNotes.textContent;
+}
+
+btnAppNotes.addEventListener('click', () => {
+    appNotes.hidden = !appNotes.hidden;
+    btnAppNotes.setAttribute('aria-expanded', String(!appNotes.hidden));
+});
+
+btnAppUpdate.addEventListener('click', async () => {
+    const api = window.pywebview?.api;
+    if (state.downloading || !api) return;
+    if (state.app?.reason === 'installer') {
+        api.open_release_page();
+        return;
+    }
+    setDownloading(true, `Actualizando a la versión ${state.app.latest}…`);
+    btnCancel.hidden = true;
+    btnDownload.hidden = false;
+    btnDownload.disabled = true;
+    btnAppUpdate.disabled = true;
+    btnAppUpdate.querySelector('.spinner').hidden = false;
+    logDetails.open = true;
+
+    const result = await api.apply_app_update();
+    if (result.ok) {
+        // main.py ya abrió la versión nueva y cierra esta ventana
+        setStatus('Listo: reiniciando con la versión nueva…');
+        setProgress(100);
+        return;
+    }
+    btnAppUpdate.disabled = false;
+    btnAppUpdate.querySelector('.spinner').hidden = true;
+    btnDownload.disabled = false;
+    setDownloading(false);
+    finishStatus('error', 'No se pudo actualizar la app');
+    showExplanation(result.error);
+});
 
 // --- Eventos ---
 
@@ -463,7 +550,7 @@ function setDownloading(active, initialStatus = "Preparando…") {
     btnCancel.disabled = false;
     btnCancel.querySelector('span').textContent = "Cancelar";
     [urlInput, btnFolder, advFormatSelect, chkPlaylist, chkSubs, chkSponsor, chkSkip, btnUpdate, btnCheck,
-        chkAccount, btnAccount, accountBrowser].forEach(el => el.disabled = active);
+        chkAccount, btnAccount, accountBrowser, btnAppUpdate].forEach(el => el.disabled = active);
     advQualitySelect.disabled = active || LOSSLESS.includes(advFormatSelect.value);
     chkMetadata.disabled = active || getSource(urlInput.value) === 'spotify';
     formatButtons.forEach(btn => btn.disabled = active);
@@ -626,6 +713,7 @@ function onDownloadComplete(status) {
 loadPreferences();
 // La API de Python se inyecta de forma asíncrona
 function onApiReady() {
+    checkAppUpdate();
     checkEnvironment();
     loadAccount();
 }
