@@ -506,7 +506,7 @@ function updateStatusFromLog(message) {
         state.newFiles++;
         setStatus(`Descargando: ${m[1].split(/[\\/]/).pop()}`);
     } else if ((m = message.match(/^Ya lo tienes: (.+?)(?: → .*)?$/))) {
-        // main.py lo escribe cuando omite algo que está en el historial
+        // main.py lo escribe cuando omite algo que está en el historial o que ya existe en la carpeta
         state.skipped++;
         setStatus(`Ya lo tenías: ${m[1]}`);
     } else if (/^Reintentando /.test(message)) {
