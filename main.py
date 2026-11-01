@@ -212,12 +212,15 @@ def _swap_app_files(new, app_dir, backup):
     try:
         for name in APP_FILES:
             src, dst = os.path.join(new, name), os.path.join(app_dir, name)
+            # Lo que el paquete no trae se deja como está: la copia de seguridad se borra al
+            # terminar, así que moverlo sería perderlo (p. ej. icon.ico, que usan los accesos directos)
+            if not os.path.exists(src):
+                continue
             if os.path.exists(dst):
                 os.replace(dst, os.path.join(backup, name))
                 moved.append(name)
-            if os.path.exists(src):
-                os.replace(src, dst)
-                placed.append(name)
+            os.replace(src, dst)
+            placed.append(name)
     except Exception:
         for name in placed:
             dst = os.path.join(app_dir, name)
@@ -473,6 +476,7 @@ class Api:
             self._busy = True
             self._cancelled = False
         restarting = False
+        pip_ran = False  # pip no se puede deshacer: si corrió, el error no promete que nada cambió
         try:
             release = _latest_release()
             if not release:
@@ -519,6 +523,7 @@ class Api:
                 cmd = [PYTHON, '-m', 'pip', 'install', '--quiet', '--disable-pip-version-check',
                        '--no-warn-script-location', '--no-build-isolation', '-r', new_reqs]
                 self._log('Instalando las dependencias de la versión nueva…')
+                pip_ran = True
                 if self._stream(cmd) != 0:
                     raise ValueError('pip no pudo instalar las dependencias nuevas')
 
@@ -533,7 +538,14 @@ class Api:
             return {'ok': True, 'error': ''}
         except Exception as e:
             self._log(f'Error al actualizar: {e}')
-            return {'ok': False, 'error': f'No se pudo actualizar: {e}. La app quedó como estaba.'}
+            if pip_ran:
+                # Los archivos de la app se restauran, pero lo que pip ya instaló queda
+                outcome = ('Los archivos de la app quedaron como estaban, pero algunas dependencias de '
+                           'Python pueden haber quedado actualizadas; si algo falla, vuelve a intentar '
+                           'o instala la versión nueva con el instalador.')
+            else:
+                outcome = 'La app quedó como estaba.'
+            return {'ok': False, 'error': f'No se pudo actualizar: {e}. {outcome}'}
         finally:
             with self._lock:
                 self._process = None
