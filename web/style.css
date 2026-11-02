@@ -398,6 +398,16 @@ select:disabled {
     line-height: 1.45;
 }
 
+.existing-field {
+    padding: 14px 14px 0;
+}
+
+/* Reemplazar vuelve a bajar todo: se destaca como advertencia */
+.adv-hint.warn {
+    color: var(--warning);
+    background: color-mix(in srgb, var(--warning) 10%, transparent);
+}
+
 .checkbox-group {
     padding: 14px;
     display: flex;

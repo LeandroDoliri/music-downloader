@@ -76,7 +76,7 @@ KNOWN_ERRORS = [
     (re.compile(r'No results found for song', re.I),
      "Explicación: spotDL no encontró esta canción en YouTube, así que no se pudo descargar."),
 ]
-SUCCESS_LINE = re.compile(r'^\[download\] 100%|has already been downloaded|^\[(ExtractAudio|Merger)\]|^Downloaded "|^Skipping ')
+SUCCESS_LINE = re.compile(r'^\[download\] 100%|has already been downloaded|^\[(ExtractAudio|Merger)\]|^Downloaded "|^Skipping |^Updated metadata for ')
 
 # Sesión de YouTube del usuario (para contenido Premium). Se importa una vez desde el
 # navegador y se guarda fuera del repo; solo se conservan cookies de YouTube/Google.
@@ -91,10 +91,21 @@ COOKIE_EXACT_DOMAINS = ('google.com', 'accounts.google.com')
 HISTORY_FILE = os.path.join(APP_DATA, 'history.tsv')
 # Lista de omitidos que se regenera antes de cada descarga, solo con archivos que siguen existiendo
 SKIP_ARCHIVE = os.path.join(APP_DATA, 'skip_archive.txt')
+# Qué hacer con lo que el usuario ya tiene (options['existing']): saltearlo, volver a bajarlo
+# sobrescribiendo, o solo reescribir etiquetas y portada sin volver a bajar el audio
+EXISTING_MODES = ('skip', 'replace', 'metadata')
+# Formatos que se pueden reetiquetar en su lugar (la extensión del archivo que ya existe)
+RETAG_FORMATS = {'audio': ('mp3', 'm4a', 'opus', 'flac', 'wav'), 'video': ('mp4', 'mkv', 'webm')}
 # yt-dlp reciente agrega el título después del id ("<id>: <título> has already…")
 ARCHIVED_LINE = re.compile(r'^\[download\] (\S+): (?:.* )?has already been recorded in the archive')
-# Omitido por yt-dlp porque el archivo ya existe en la carpeta (aunque no esté en el historial)
+# Omitido por yt-dlp porque el archivo ya existe en la carpeta (aunque no esté en el historial).
+# Igual corre los postprocesadores, así que etiquetas y portada se vuelven a escribir.
 EXISTING_LINE = re.compile(r'^\[download\] (.+) has already been downloaded$')
+# yt-dlp con --force-overwrites, antes de volver a bajar
+YTDLP_OVERWRITING = re.compile(r'^Deleting existing file (.+)$')
+# spotDL con --overwrite force / metadata (rich puede cortar las líneas largas: el final es opcional)
+SPOTDL_OVERWRITING = re.compile(r'^Overwriting (.+?)\s*(?:\(duplicate\))?$')
+SPOTDL_RETAGGED = re.compile(r'^Updated metadata for (.+?)(?:, moved to new location: .*)?$')
 # Con --print-errors spotDL repite al final cada canción que falló, con su URL de Spotify
 SPOTDL_NOT_FOUND = re.compile(r'^(https://open\.spotify\.com/track/\S+) - LookupError')
 # Marca en el nombre de archivo de las canciones bajadas sin filtro (pueden ser otra versión)
@@ -252,14 +263,19 @@ def _filter_cookies(src, dst):
 
 
 def load_history(kind):
-    """{(extractor, id): (título, ruta)} de las descargas de ese tipo cuyo archivo todavía existe."""
+    """{(extractor, id): (título, ruta, url)} de las descargas de ese tipo cuyo archivo todavía existe.
+    Si el mismo elemento se bajó varias veces gana la última línea (p. ej. la de un reemplazo).
+    Las líneas anteriores a la columna de la url tienen 5 campos: la url se arma si es de YouTube."""
     known = {}
     try:
         with open(HISTORY_FILE, encoding='utf-8') as f:
             for line in f:
                 fields = line.rstrip('\n').split('\t')
-                if len(fields) == 5 and fields[2] == kind and os.path.exists(fields[4]):
-                    known[(fields[0].lower(), fields[1])] = (fields[3], fields[4])
+                if len(fields) in (5, 6) and fields[2] == kind and os.path.exists(fields[4]):
+                    url = fields[5] if len(fields) == 6 else ''
+                    if not url and fields[0].lower() == 'youtube':
+                        url = f'https://www.youtube.com/watch?v={fields[1]}'
+                    known[(fields[0].lower(), fields[1])] = (fields[3], fields[4], url)
     except FileNotFoundError:
         pass
     return known
@@ -308,11 +324,20 @@ def build_ytdlp_command(o):
 
     # Registrar cada archivo terminado en el historial (after_move = ruta final ya convertida)
     kind = 'video' if o['mainFormat'] == 'mp4' else 'audio'
-    cmd += ['--print-to-file', f'after_move:%(extractor_key)s\t%(id)s\t{kind}\t%(title)s\t%(filepath)s', HISTORY_FILE]
+    cmd += ['--print-to-file',
+            f'after_move:%(extractor_key)s\t%(id)s\t{kind}\t%(title)s\t%(filepath)s\t%(webpage_url)s', HISTORY_FILE]
     if o.get('archiveFile'):
         cmd += ['--download-archive', o['archiveFile']]
+    if o.get('existing') == 'replace':
+        cmd.append('--force-overwrites')
 
-    cmd += ['-o', os.path.join(o['folder'], OUTPUT_TEMPLATE)]
+    if o.get('retagPath'):
+        # Reetiquetar un archivo que ya existe: con ese mismo nombre yt-dlp no baja el audio,
+        # pero vuelve a correr los postprocesadores (metadatos y portada)
+        stem = os.path.splitext(o['retagPath'])[0].replace('%', '%%')
+        cmd += ['-o', stem + '.%(ext)s']
+    else:
+        cmd += ['-o', os.path.join(o['folder'], OUTPUT_TEMPLATE)]
     return cmd
 
 
@@ -336,6 +361,10 @@ def build_spotdl_command(o, urls=None, relaxed=False):
            '--print-errors']
     if relaxed:
         cmd += ['--dont-filter-results', '--output', f'{{artists}} - {{title}} {REVIEW_TAG}.{{output-ext}}']
+    # 'force' vuelve a bajar y sobrescribe; 'metadata' solo reescribe etiquetas y portada. Como el
+    # 'skip' de siempre, reconocen el archivo por el nombre que le daría spotDL en la carpeta.
+    if o.get('existing') in ('replace', 'metadata'):
+        cmd += ['--overwrite', 'force' if o['existing'] == 'replace' else 'metadata']
     if o.get('sponsorblock'):
         cmd.append('--sponsor-block')
     if o.get('useAccount') and os.path.exists(COOKIES_FILE):
@@ -376,6 +405,9 @@ class Api:
         self._busy = False
         self._lock = threading.Lock()
         self._known = {}  # historial cargado para la descarga actual (ver load_history)
+        self._existing = None  # options['existing'] de la descarga actual
+        self._to_retag = []  # (título, ruta, url) del historial a reetiquetar (ver _retag_known)
+        self._retag_formats = ()  # extensiones que se pueden reetiquetar en la descarga actual
         self._release_page = ''  # página del último release (ver check_app_update)
 
     def set_window(self, window):
@@ -692,16 +724,30 @@ class Api:
 
             os.makedirs(APP_DATA, exist_ok=True)
             self._known = {}
+            self._to_retag = []
+            self._retag_formats = ()
+            existing = options.get('existing')
+            if existing not in EXISTING_MODES:
+                # La app anterior solo mandaba la casilla skipExisting (sin ella: ni historial ni sobrescribir)
+                existing = 'skip' if options.get('skipExisting') else None
+            if existing == 'metadata':
+                # Reetiquetar sin incrustar metadatos no haría nada
+                options = dict(options, metadata=True)
+            options = dict(options, existing=existing)
+            self._existing = existing
             if tool == 'spotdl':
                 if options.get('mainFormat') == 'mp4':
                     self._log("Advertencia: spotDL no soporta video. Descargando audio.")
                     options = dict(options, mainFormat='mp3', advFormat='mp3')
-                # spotDL ya omite por su cuenta las canciones que existen en la carpeta
+                # spotDL reconoce por su cuenta las canciones que existen en la carpeta
                 cmd = build_spotdl_command(options)
             else:
-                if options.get('skipExisting'):
+                if existing in ('skip', 'metadata'):
+                    # Con 'metadata' lo que está en el historial también se omite en esta pasada,
+                    # y después se reetiqueta en su ruta (ver _retag_known)
                     kind = 'video' if options.get('mainFormat') == 'mp4' else 'audio'
                     self._known = load_history(kind)
+                    self._retag_formats = RETAG_FORMATS[kind]
                     with open(SKIP_ARCHIVE, 'w', encoding='utf-8') as f:
                         f.writelines(f'{extractor} {vid}\n' for extractor, vid in self._known)
                     options = dict(options, archiveFile=SKIP_ARCHIVE)
@@ -728,6 +774,9 @@ class Api:
                               f"«{REVIEW_TAG}» en el nombre: podrían ser otra versión, revísalas.")
                     returncode = 0 if stats['errors'] <= 0 else returncode
 
+            if self._to_retag and not self._cancelled:
+                self._retag_known(options, stats)
+
             if self._cancelled:
                 self._finish_download('cancelled')
             elif returncode == 0 and stats['errors'] == 0:
@@ -747,6 +796,21 @@ class Api:
             with self._lock:
                 self._process = None
                 self._busy = False
+
+    def _retag_known(self, options, stats):
+        """Modo 'metadata' de yt-dlp: reescribe etiquetas y portada de lo que el historial ubica en
+        otra ruta. yt-dlp no tiene un modo así, pero si la plantilla apunta al archivo que ya existe
+        no baja el audio y solo vuelve a correr los postprocesadores. Uno por proceso, porque cada
+        archivo tiene su propia ruta."""
+        items = self._to_retag
+        self._log(f"Actualizando metadatos de {len(items)} elemento(s) que ya tenías…")
+        for title, path, url in items:
+            if self._cancelled:
+                break
+            retag = dict(options, url=url, advFormat=os.path.splitext(path)[1][1:].lower(), playlist=False,
+                         # El archivo ya está recortado: SponsorBlock lo volvería a cortar
+                         sponsorblock=False, archiveFile=None, retagPath=path)
+            self._stream(build_ytdlp_command(retag), stats=stats)
 
     def _stream(self, cmd, cwd=None, stats=None):
         """Ejecuta cmd, manda su salida al log y devuelve el código de salida."""
@@ -788,8 +852,13 @@ class Api:
                     stats['not_found'].append(m.group(1))
             if (m := ARCHIVED_LINE.match(line)):
                 # Omitido porque ya está en el historial: decir dónde está
-                title, path = next(((t, p) for (_, vid), (t, p) in self._known.items() if vid == m.group(1)),
-                                   (m.group(1), ''))
+                entry = next((e for (_, vid), e in self._known.items() if vid == m.group(1)), (m.group(1), '', ''))
+                title, path, url = entry
+                if (self._existing == 'metadata' and url and entry not in self._to_retag
+                        and os.path.splitext(path)[1][1:].lower() in self._retag_formats):
+                    # Se reetiqueta al terminar esta pasada; ese proceso cuenta su propio éxito
+                    self._to_retag.append(entry)
+                    continue
                 self._log(f"Ya lo tienes: {title}" + (f" → {path}" if path else ''))
                 if stats is not None:
                     stats['successes'] += 1
@@ -798,7 +867,19 @@ class Api:
                 # Mismo formato que el caso del historial (SUCCESS_LINE ya lo contó como éxito).
                 # yt-dlp igual lo anota en el historial, así que la próxima vez se detecta desde cualquier carpeta.
                 path = m.group(1)
-                self._log(f"Ya lo tienes: {os.path.splitext(os.path.basename(path))[0]} → {path}")
+                name = os.path.splitext(os.path.basename(path))[0]
+                # Los postprocesadores corren igual: en modo 'metadata' eso es justo lo que se buscaba
+                prefix = 'Metadatos actualizados' if self._existing == 'metadata' else 'Ya lo tienes'
+                self._log(f"{prefix}: {name} → {path}")
+                continue
+            if (m := YTDLP_OVERWRITING.match(line)):
+                self._log(f"Reemplazando: {os.path.splitext(os.path.basename(m.group(1)))[0]} → {m.group(1)}")
+                continue
+            if (m := SPOTDL_OVERWRITING.match(line)):
+                self._log(f"Reemplazando: {m.group(1)}")
+                continue
+            if (m := SPOTDL_RETAGGED.match(line)):
+                self._log(f"Metadatos actualizados: {m.group(1)}")
                 continue
             if '%' in line and not ERROR_LINE.match(line) and not line.startswith('[download] 100%'):
                 now = time.time()

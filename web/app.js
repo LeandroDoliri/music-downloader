@@ -23,7 +23,10 @@ const state = {
     spotdlTotal: 0,   // canciones de la lista de Spotify ("Found N songs")
     spotdlDone: 0,
     skipped: 0,       // elementos omitidos porque ya los tenía
-    newFiles: 0,      // elementos descargados de verdad en esta ejecución
+    newFiles: 0,      // elementos descargados de verdad en esta ejecución (los reemplazados también)
+    updated: 0,       // elementos existentes a los que solo se les reescribieron los metadatos
+    retagTotal: 0,    // elementos del historial a reetiquetar ("Actualizando metadatos de N")
+    lastDest: '',     // último archivo descargado, para no contar dos veces video + audio
 };
 
 // Elementos UI
@@ -45,8 +48,8 @@ const chkSubs = $('chk-subs');
 const lblSubs = $('lbl-subs');
 const chkSponsor = $('chk-sponsor');
 const lblSponsor = $('lbl-sponsor');
-const chkSkip = $('chk-skip');
-const lblSkip = $('lbl-skip');
+const existingSelect = $('existing');
+const existingHint = $('existing-hint');
 const btnAdvanced = $('btn-advanced');
 const advancedPanel = $('advanced-panel');
 const btnDownload = $('btn-download');
@@ -89,6 +92,11 @@ function getSource(url) {
 
 function effectiveFormat() {
     return getSource(urlInput.value) === 'spotify' ? 'mp3' : state.format;
+}
+
+// spotDL siempre incrusta metadatos, y "Actualizar solo los metadatos" no tiene sentido sin ellos
+function metadataLocked() {
+    return getSource(urlInput.value) === 'spotify' || existingSelect.value === 'metadata';
 }
 
 // --- Actualización de la UI ---
@@ -141,6 +149,32 @@ function updateHints() {
     }
     advHint.textContent = hint;
     advHint.hidden = !hint;
+    updateExistingHint();
+}
+
+// Qué pasa con lo que ya está descargado: spotDL solo mira la carpeta destino, yt-dlp también el historial
+function updateExistingHint() {
+    const isSpotify = getSource(urlInput.value) === 'spotify';
+    const mode = existingSelect.value;
+    let hint;
+    if (mode === 'replace') {
+        hint = 'Se vuelve a bajar todo lo del enlace aunque ya lo tengas: si es una lista, todos sus temas. '
+            + 'Los archivos de esta carpeta con el mismo nombre se sobrescriben; si lo tienes en otra carpeta, '
+            + 'esa copia no se toca y aquí se baja otra.';
+    } else if (mode === 'metadata') {
+        hint = isSpotify
+            ? 'Reescribe etiquetas y portada con los datos de Spotify sin volver a bajar el audio. Solo reconoce '
+                + 'los archivos de esta carpeta que conservan el nombre y el formato que les dio la app; lo que falte se descarga.'
+            : 'Reescribe etiquetas y portada de lo que ya tienes sin volver a bajar el audio, también en otras '
+                + 'carpetas si lo bajaste con esta app. Lo que falte se descarga.';
+    } else {
+        hint = isSpotify
+            ? 'spotDL omite las canciones que ya están en esta carpeta.'
+            : 'No se vuelve a bajar lo que ya tienes, aunque esté en otra carpeta o formato.';
+    }
+    existingHint.textContent = hint;
+    existingHint.classList.toggle('warn', mode === 'replace');
+    existingHint.hidden = false;
 }
 
 function updateSourceUI() {
@@ -161,9 +195,8 @@ function updateSourceUI() {
     });
     formatHint.hidden = !(isSpotify && state.format === 'mp4');
 
-    // spotDL siempre incrusta metadatos
-    chkMetadata.disabled = isSpotify;
-    chkMetadata.checked = isSpotify || state.metadata;
+    chkMetadata.disabled = state.downloading || metadataLocked();
+    chkMetadata.checked = metadataLocked() || state.metadata;
     metadataNote.hidden = !isSpotify;
 
     // spotDL siempre baja la lista entera; la casilla no aplica
@@ -172,12 +205,12 @@ function updateSourceUI() {
     lblSubs.hidden = !(source === 'youtube' && shownFormat === 'mp4');
     // SponsorBlock solo tiene datos de videos de YouTube (spotDL también baja de YouTube)
     lblSponsor.hidden = !(source === 'youtube' || isSpotify);
-    // spotDL ya omite por su cuenta las canciones que existen en la carpeta destino
-    lblSkip.hidden = isSpotify;
 
     if (advFormatSelect.dataset.mode !== shownFormat) {
         advFormatSelect.dataset.mode = shownFormat;
         updateAdvancedOptions();
+    } else {
+        updateExistingHint();
     }
 }
 
@@ -200,7 +233,9 @@ function loadPreferences() {
     chkPlaylist.checked = load('playlist') === 'true';
     chkSubs.checked = load('subs') === 'true';
     chkSponsor.checked = load('sponsorblock') === 'true';
-    chkSkip.checked = load('skipExisting') !== 'false'; // por defecto true
+    // "Si ya lo tengo" no se guarda: al abrir siempre vuelve a omitir, para que nadie reemplace
+    // o reetiquete una biblioteca entera por una elección olvidada de la vez anterior
+    existingSelect.value = 'skip';
     chkAccount.checked = load('useAccount') !== 'false'; // por defecto true al conectar
     renderFolder();
     updateSourceUI();
@@ -216,7 +251,6 @@ function savePreferences() {
     save('metadata', state.metadata);
     save('subs', chkSubs.checked);
     save('sponsorblock', chkSponsor.checked);
-    save('skipExisting', chkSkip.checked);
     save('useAccount', chkAccount.checked);
 }
 
@@ -421,7 +455,7 @@ advQualitySelect.addEventListener('change', () => {
 chkPlaylist.addEventListener('change', savePreferences);
 chkSubs.addEventListener('change', savePreferences);
 chkSponsor.addEventListener('change', savePreferences);
-chkSkip.addEventListener('change', savePreferences);
+existingSelect.addEventListener('change', updateSourceUI);
 chkAccount.addEventListener('change', savePreferences);
 
 // --- Cuenta de YouTube ---
@@ -527,7 +561,7 @@ btnDownload.addEventListener('click', () => {
         metadata: chkMetadata.checked,
         subs: !lblSubs.hidden && chkSubs.checked,
         sponsorblock: !lblSponsor.hidden && chkSponsor.checked,
-        skipExisting: !lblSkip.hidden && chkSkip.checked,
+        existing: existingSelect.value,
         useAccount: accountConnected && chkAccount.checked,
     };
 
@@ -549,10 +583,10 @@ function setDownloading(active, initialStatus = "Preparando…") {
     btnCancel.hidden = !active;
     btnCancel.disabled = false;
     btnCancel.querySelector('span').textContent = "Cancelar";
-    [urlInput, btnFolder, advFormatSelect, chkPlaylist, chkSubs, chkSponsor, chkSkip, btnUpdate, btnCheck,
+    [urlInput, btnFolder, advFormatSelect, chkPlaylist, chkSubs, chkSponsor, existingSelect, btnUpdate, btnCheck,
         chkAccount, btnAccount, accountBrowser, btnAppUpdate].forEach(el => el.disabled = active);
     advQualitySelect.disabled = active || LOSSLESS.includes(advFormatSelect.value);
-    chkMetadata.disabled = active || getSource(urlInput.value) === 'spotify';
+    chkMetadata.disabled = active || metadataLocked();
     formatButtons.forEach(btn => btn.disabled = active);
 
     if (active) {
@@ -560,6 +594,9 @@ function setDownloading(active, initialStatus = "Preparando…") {
         state.spotdlDone = 0;
         state.skipped = 0;
         state.newFiles = 0;
+        state.updated = 0;
+        state.retagTotal = 0;
+        state.lastDest = '';
         statusBox.hidden = false;
         statusBox.className = 'status';
         consoleDiv.innerHTML = '';
@@ -590,12 +627,34 @@ function updateStatusFromLog(message) {
     if ((m = message.match(/Downloading (?:item|video) (\d+) of (\d+)/i))) {
         setStatus(`Descargando elemento ${m[1]} de ${m[2]}…`);
     } else if ((m = message.match(/\[download\] Destination: (.+)$/))) {
-        state.newFiles++;
-        setStatus(`Descargando: ${m[1].split(/[\\/]/).pop()}`);
+        // Un video se baja en dos partes ("X.f137.mp4" y "X.f140.m4a"): se cuenta una vez
+        const name = m[1].split(/[\\/]/).pop();
+        const base = name.replace(/(\.f\d+)?\.\w+$/, '');
+        if (base !== state.lastDest) state.newFiles++;
+        state.lastDest = base;
+        setStatus(`Descargando: ${name}`);
     } else if ((m = message.match(/^Ya lo tienes: (.+?)(?: → .*)?$/))) {
         // main.py lo escribe cuando omite algo que está en el historial o que ya existe en la carpeta
         state.skipped++;
         setStatus(`Ya lo tenías: ${m[1]}`);
+    } else if ((m = message.match(/^Reemplazando: (.+?)(?: → .*)?$/))) {
+        // Lo cuenta como nuevo la descarga que sigue (Destination / Downloaded)
+        setStatus(`Reemplazando: ${m[1]}`);
+    } else if ((m = message.match(/^Actualizando metadatos de (\d+) /))) {
+        state.retagTotal = parseInt(m[1], 10);
+        setStatus(message);
+        setProgress(0);
+    } else if ((m = message.match(/^Metadatos actualizados: (.+?)(?: → .*)?$/))) {
+        // main.py lo escribe para yt-dlp (archivo existente reprocesado) y para spotDL (--overwrite metadata)
+        state.updated++;
+        const total = state.spotdlTotal || state.retagTotal;
+        const done = state.spotdlTotal ? ++state.spotdlDone : state.updated;
+        if (total > 1) {
+            setStatus(`Metadatos actualizados (${done}/${total}): ${m[1]}`);
+            setProgress(Math.min(100, done / total * 100));
+        } else {
+            setStatus(`Metadatos actualizados: ${m[1]}`);
+        }
     } else if (/^Reintentando /.test(message)) {
         // Lo que explicaba el fallo del primer intento ya no aplica
         const explain = document.getElementById('status-explain');
@@ -685,10 +744,17 @@ function onDownloadComplete(status) {
     setDownloading(false);
 
     if (status === 'success') {
-        if (state.skipped && !state.newFiles) {
-            finishStatus(status, state.skipped === 1 ? "Ya lo tenías: no se descargó nada" : "Ya tenías todo: no se descargó nada nuevo");
-        } else if (state.skipped) {
-            finishStatus(status, `¡Listo! Se omitieron ${state.skipped} que ya tenías`);
+        const { skipped, newFiles, updated } = state;
+        if (skipped && !newFiles && !updated) {
+            finishStatus(status, skipped === 1 ? "Ya lo tenías: no se descargó nada" : "Ya tenías todo: no se descargó nada nuevo");
+        } else if (updated && !newFiles && !skipped) {
+            finishStatus(status, updated === 1 ? "Metadatos actualizados" : `Metadatos actualizados en ${updated} elementos`);
+        } else if (skipped || updated) {
+            const parts = [];
+            if (newFiles) parts.push(newFiles === 1 ? '1 descargado' : `${newFiles} descargados`);
+            if (updated) parts.push(`${updated} con metadatos actualizados`);
+            if (skipped) parts.push(skipped === 1 ? '1 omitido porque ya lo tenías' : `${skipped} omitidos porque ya los tenías`);
+            finishStatus(status, `¡Listo! ${parts.join(', ')}`);
         } else {
             finishStatus(status, "¡Descarga completada!");
         }
