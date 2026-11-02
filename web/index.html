@@ -133,6 +133,16 @@
                         </div>
                     </div>
                     <p class="hint adv-hint" id="adv-hint" hidden></p>
+                    <!-- Qué hacer con lo que ya está descargado (options.existing en main.py) -->
+                    <div class="field existing-field">
+                        <label for="existing">Si ya lo tengo</label>
+                        <select id="existing">
+                            <option value="skip">Omitirlo (no volver a bajarlo)</option>
+                            <option value="replace">Reemplazarlo</option>
+                            <option value="metadata">Actualizar solo los metadatos</option>
+                        </select>
+                    </div>
+                    <p class="hint adv-hint" id="existing-hint" hidden></p>
                     <div class="checkbox-group">
                         <label class="checkbox-label" id="lbl-playlist">
                             <input type="checkbox" id="chk-playlist">
@@ -148,11 +158,6 @@
                             <input type="checkbox" id="chk-subs">
                             <span class="checkmark"></span>
                             <span>Incrustar subtítulos <small>(español e inglés)</small></span>
-                        </label>
-                        <label class="checkbox-label" id="lbl-skip">
-                            <input type="checkbox" id="chk-skip" checked>
-                            <span class="checkmark"></span>
-                            <span>No volver a bajar lo que ya tengo <small>(aunque esté en otra carpeta o formato)</small></span>
                         </label>
                         <label class="checkbox-label" id="lbl-sponsor" hidden>
                             <input type="checkbox" id="chk-sponsor">
